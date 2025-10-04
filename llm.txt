@@ -1,0 +1,410 @@
+# Vercel Local Cron - LLM Context
+
+## Project Overview
+
+**Name:** vercel-local-cron
+**Version:** 0.0.1
+**License:** MIT
+**Description:** A lightweight TypeScript library that automatically executes Vercel cron jobs on your local machine during Next.js development. Eliminates the need to deploy to preview environments just to test cron jobs.
+
+## Purpose
+
+This tool solves a common developer pain point: testing Vercel cron jobs locally. Instead of deploying to Vercel's preview environments to test scheduled tasks, developers can run them locally during `next dev` with the same configuration they use in production.
+
+## Technology Stack
+
+- **Language:** TypeScript (strict mode enabled)
+- **Runtime:** Node.js >= 18.0.0
+- **Module System:** ESM (ES Modules)
+- **Target:** ES2020
+- **Key Dependencies:**
+  - `croner` (v9.0.0) - Cron job scheduling
+  - `dotenv` (v16.4.5) - Environment variable management
+- **Dev Dependencies:**
+  - TypeScript 5.7.2
+  - tsx 4.19.2 (TypeScript execution)
+  - @types/node 20.17.6
+
+## Architecture
+
+### Core Concepts
+
+1. **CLI Wrapper:** Spawns `next dev` and monitors its output
+2. **Port Detection:** Automatically detects the Next.js dev server port from stdout
+3. **Configuration Parser:** Reads and validates `vercel.json` cron definitions
+4. **Scheduler:** Uses Croner library to schedule cron jobs based on cron expressions
+5. **HTTP Executor:** Makes authenticated GET requests to local endpoints
+6. **Graceful Shutdown:** Properly stops all jobs on process termination
+
+### Request Flow
+
+```
+User runs CLI → Spawns next dev → Detects port → Parses vercel.json →
+Loads .env.local → Schedules jobs → Executes HTTP GET requests on schedule →
+Handles shutdown gracefully
+```
+
+## Directory Structure
+
+```
+vercel-local-cron/
+├── src/
+│   ├── index.ts              # Main exports (public API)
+│   ├── cli/
+│   │   └── index.ts          # CLI entry point, spawns next dev, coordinates everything
+│   ├── config/
+│   │   └── parser.ts         # Parses and validates vercel.json
+│   ├── http/
+│   │   └── executor.ts       # Executes HTTP GET requests to cron endpoints
+│   ├── port/
+│   │   └── detector.ts       # Detects Next.js dev server port from output
+│   ├── scheduler/
+│   │   └── index.ts          # CronScheduler class, manages Croner jobs
+│   └── types/
+│       └── index.ts          # TypeScript type definitions
+├── bin/
+│   └── vercel-local-cron.js  # Executable entry point
+├── dist/                     # Compiled JavaScript output (generated)
+├── package.json
+├── tsconfig.json
+└── vercel.json.example       # Example configuration
+```
+
+## Key Files and Their Responsibilities
+
+### src/index.ts
+**Purpose:** Public API exports
+**Exports:**
+- Functions: `parseVercelConfig`, `CronScheduler`, `setupShutdownHandlers`, `executeRequest`, `detectPort`, `getPortFromEnv`, `runCli`
+- Types: `CronJob`, `VercelConfig`, `EnvConfig`, `LocalCronConfig`
+
+### src/cli/index.ts
+**Purpose:** Main CLI orchestration
+**Key Functions:**
+- `runCli()`: Entry point that:
+  1. Loads environment variables from `.env.local`
+  2. Parses `vercel.json`
+  3. Spawns `npx next dev` as child process
+  4. Monitors stdout for port detection
+  5. Initializes CronScheduler once port is detected
+  6. Sets up shutdown handlers for SIGINT/SIGTERM
+
+**Important Patterns:**
+- Uses child_process.spawn with piped stdio
+- Forwards stdout/stderr to parent process
+- Detects port from Next.js output patterns
+- Graceful shutdown with 1s timeout
+
+### src/config/parser.ts
+**Purpose:** Configuration parsing and validation
+**Key Functions:**
+- `parseVercelConfig(cwd)`: Reads `vercel.json` from project root
+  - Validates crons array structure
+  - Ensures each job has required `path` and `schedule` fields
+  - Throws descriptive errors for missing/invalid config
+
+### src/scheduler/index.ts
+**Purpose:** Cron job scheduling and management
+**Key Classes:**
+- `CronScheduler`: Manages Croner job instances
+  - Constructor takes `CronSchedulerOptions` (port, cronSecret, jobs)
+  - `initializeJobs()`: Creates Croner instances for each job
+  - `stop()`: Stops all scheduled jobs
+  - `count`: Getter for number of jobs
+
+**Key Functions:**
+- `setupShutdownHandlers(scheduler)`: Sets up SIGINT/SIGTERM/exit handlers
+
+**Important Details:**
+- Each job wraps `executeRequest()` in Croner callback
+- Logs next run time for each scheduled job
+- Catches and logs scheduling errors per-job (doesn't fail all jobs)
+
+### src/http/executor.ts
+**Purpose:** HTTP request execution
+**Key Functions:**
+- `executeRequest(options)`: Makes HTTP GET request to localhost
+  - Adds `Authorization: Bearer ${cronSecret}` header if provided
+  - 30-second timeout
+  - Logs status code and duration
+  - Never rejects (always resolves to allow scheduler to continue)
+
+**Request Format:**
+```
+GET http://localhost:{port}{path}
+Authorization: Bearer {cronSecret}
+```
+
+### src/port/detector.ts
+**Purpose:** Port detection from Next.js output
+**Key Functions:**
+- `detectPort(output)`: Parses Next.js stdout for port number
+  - Pattern 1: "ready on http://localhost:3000"
+  - Pattern 2: "Local: http://localhost:3001"
+  - Pattern 3: "port: 3000"
+- `getPortFromEnv(defaultPort)`: Reads PORT from environment variables
+
+### src/types/index.ts
+**Purpose:** TypeScript type definitions
+**Key Types:**
+```typescript
+interface CronJob {
+  path: string;        // API route (e.g., "/api/cron/cleanup")
+  schedule: string;    // Cron expression (e.g., "0 0 * * *")
+}
+
+interface VercelConfig {
+  crons?: CronJob[];
+}
+
+interface EnvConfig {
+  cronSecret?: string;
+}
+
+interface LocalCronConfig {
+  vercelConfig: VercelConfig;
+  envConfig: EnvConfig;
+  port: number;
+}
+```
+
+## Configuration Files
+
+### vercel.json
+**Location:** Project root
+**Structure:**
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/cleanup",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
+```
+
+**Cron Expression Format:**
+```
+* * * * *
+│ │ │ │ └─── Day of week (0-7, Sunday = 0 or 7)
+│ │ │ └───── Month (1-12)
+│ │ └─────── Day of month (1-31)
+│ └───────── Hour (0-23)
+└─────────── Minute (0-59)
+```
+
+**Common Examples:**
+- `0 0 * * *` - Daily at midnight
+- `*/15 * * * *` - Every 15 minutes
+- `0 */2 * * *` - Every 2 hours
+- `0 9 * * 1-5` - Weekdays at 9 AM
+
+### .env.local
+**Location:** Project root
+**Variables:**
+- `CRON_SECRET`: Secret token for authenticating cron requests
+- `PORT`: (optional) Override port detection
+
+**Priority Order:**
+1. `.env.local` (highest)
+2. `.env.development`
+3. `.env`
+
+### tsconfig.json
+**Key Settings:**
+- Target: ES2020
+- Module: ESNext
+- Module Resolution: bundler
+- Strict mode: enabled
+- Root: ./src
+- Output: ./dist
+- Generates declarations and source maps
+- Incremental builds enabled
+
+## Build System
+
+**Scripts:**
+- `npm run build` - Compiles TypeScript to dist/
+- `npm run dev` - Runs CLI in development with tsx
+- `npm run typecheck` - Type checks without emitting
+
+**Output:**
+- dist/ directory contains compiled .js files
+- .d.ts declaration files for TypeScript consumers
+- Source maps for debugging
+
+**Package Exports:**
+```json
+{
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "vercel-local-cron": "./bin/vercel-local-cron.js"
+  }
+}
+```
+
+## Usage Patterns
+
+### CLI Usage
+```bash
+npx vercel-local-cron
+```
+
+### Programmatic Usage
+```typescript
+import { CronScheduler, parseVercelConfig, loadEnvironment } from 'vercel-local-cron';
+
+const vercelConfig = await parseVercelConfig();
+const scheduler = new CronScheduler({
+  port: 3000,
+  cronSecret: process.env.CRON_SECRET,
+  jobs: vercelConfig.crons || [],
+});
+
+// Later...
+scheduler.stop();
+```
+
+### Next.js API Route Pattern
+```typescript
+// app/api/cron/cleanup/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  const cronSecret = process.env.CRON_SECRET;
+
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Cron job logic here
+  return NextResponse.json({ success: true });
+}
+```
+
+## Important Patterns and Conventions
+
+### Error Handling
+- Config parsing throws descriptive errors
+- HTTP executor never rejects (logs errors, continues)
+- Individual job scheduling errors don't affect other jobs
+- CLI exits with code 1 on fatal errors
+
+### Logging
+- Uses emoji prefixes for visual clarity:
+  - 🚀 - Starting
+  - 📦 - Next.js related
+  - 🕐 - Scheduling
+  - ✅ - Success
+  - ❌ - Error
+  - ⚠️ - Warning
+  - 🛑 - Stopping
+- ISO timestamps for execution logs
+- Duration tracking for HTTP requests
+
+### Process Management
+- Spawns next dev as child process with shell: true
+- Pipes stdout/stderr for monitoring
+- Forwards output to parent process
+- Graceful shutdown on SIGINT/SIGTERM
+- 1-second grace period before exit
+- Stops all cron jobs before exit
+
+### Module System
+- Pure ESM (no CommonJS)
+- All imports use .js extensions (TypeScript convention for ESM)
+- import.meta.url for entry point detection
+
+## Development Workflow
+
+### Local Development
+```bash
+npm install
+npm run dev    # Run CLI in development mode
+npm run build  # Compile TypeScript
+npm run typecheck  # Check types
+```
+
+### Testing Locally
+1. Create a Next.js project with cron routes
+2. Add vercel.json with cron definitions
+3. Set CRON_SECRET in .env.local
+4. Run `npm run dev` or `npx tsx src/cli/index.ts`
+
+### Building for Distribution
+```bash
+npm run build
+# Creates dist/ with compiled JS, declarations, and source maps
+```
+
+## Common Issues and Solutions
+
+### Port Not Detected
+**Cause:** Next.js output pattern not recognized
+**Solution:**
+- Set PORT environment variable explicitly
+- Check Next.js output for "ready on" message
+- Verify regex patterns in port/detector.ts
+
+### No Cron Jobs Running
+**Cause:** Invalid vercel.json or missing crons array
+**Solution:**
+- Verify vercel.json exists in project root
+- Check crons array is properly formatted
+- Look for validation errors in console
+
+### Authorization Errors
+**Cause:** Missing or mismatched CRON_SECRET
+**Solution:**
+- Set CRON_SECRET in .env.local
+- Verify API route checks header correctly
+- Ensure header format is `Bearer ${secret}`
+
+### Jobs Not Executing
+**Cause:** Invalid cron expression or endpoint issues
+**Solution:**
+- Validate cron expression syntax
+- Check API endpoint exists and returns 2xx
+- Look for HTTP errors in console
+
+## Design Principles
+
+1. **Zero Configuration:** Works out of the box with standard Next.js + Vercel setup
+2. **Dev Experience:** Mirrors production Vercel cron behavior locally
+3. **Transparency:** Forwards Next.js output, logs all executions
+4. **Reliability:** Graceful error handling, doesn't crash on job failures
+5. **Simplicity:** Minimal dependencies, straightforward architecture
+6. **Type Safety:** Full TypeScript with strict mode
+
+## Extension Points
+
+### Adding New Features
+- **Custom port detection:** Extend `detectPort()` regex patterns
+- **Different HTTP methods:** Modify `executeRequest()` to support POST/PUT
+- **Additional auth mechanisms:** Extend request headers in executor
+- **Custom scheduling:** Wrap or extend CronScheduler class
+- **Environment file support:** Modify dotenv config() calls
+
+### Integration Opportunities
+- Could integrate with other local dev tools
+- Could support different frameworks beyond Next.js
+- Could add job history/logging persistence
+- Could support webhook-style POST requests with payloads
+
+## Target Audience
+
+**Primary:** Next.js developers using Vercel cron jobs
+**Use Case:** Local testing of scheduled tasks during development
+**Compatibility:** Next.js 13, 14, 15 (any version with dev server)
+
+## Maintenance Notes
+
+- Minimal external dependencies (only croner and dotenv for runtime)
+- No breaking changes expected from dependencies
+- Port detection may need updates if Next.js changes output format
+- Croner library handles cron expression parsing and validation
+- Uses Node.js built-in http module (no axios/fetch dependencies)
