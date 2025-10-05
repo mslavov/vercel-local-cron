@@ -21,9 +21,16 @@ npm run dev
 
 ## Architecture
 
-### Process Flow
+### CLI Commands
 
-The CLI (`src/cli/index.ts`) orchestrates everything:
+The CLI has three commands:
+- `install` - Installs package and updates package.json dev script
+- `run` - Runs the dev server with cron scheduling
+- `help` - Shows usage information
+
+### Process Flow (run command)
+
+The `runDev()` function in `src/cli/index.ts` orchestrates everything:
 
 1. **Spawns Next.js**: Uses `child_process.spawn` to run `npx next dev`
 2. **Port Detection**: Monitors stdout until Next.js outputs "ready on http://localhost:XXXX"
@@ -33,7 +40,8 @@ The CLI (`src/cli/index.ts`) orchestrates everything:
 
 ### Key Components
 
-- **CLI Layer** (`src/cli/index.ts`): Process orchestration, stdout monitoring, lifecycle management
+- **CLI Layer** (`src/cli/index.ts`): Command routing, process orchestration, stdout monitoring, lifecycle management
+- **Install Layer** (`src/cli/install.ts`): Package manager detection, package.json updates
 - **Config Layer** (`src/config/parser.ts`): Validates `vercel.json` structure
 - **Scheduler Layer** (`src/scheduler/index.ts`): Wraps Croner library, manages job lifecycle
 - **Executor Layer** (`src/http/executor.ts`): Makes authenticated HTTP GET requests
@@ -53,7 +61,8 @@ The CLI (`src/cli/index.ts`) orchestrates everything:
 
 ## Module Boundaries
 
-- **Public API** (`src/index.ts`): Only exports are public. Everything else is internal.
+- **Public API** (`src/index.ts`): Exports `runCli`, `runDev`, `installCommand`, and core utilities
+- **CLI Commands**: `runCli()` routes to `runDev()` or `installCommand()` based on argv
 - **CLI Independence**: The CLI can run standalone via `bin/vercel-local-cron.js` which imports `dist/cli/index.js`
 - **Type Definitions**: All types live in `src/types/index.ts` and are re-exported from main index
 
@@ -62,9 +71,10 @@ The CLI (`src/cli/index.ts`) orchestrates everything:
 When making changes:
 
 1. **Always build after TypeScript changes**: `npm run build`
-2. **Test the CLI** by running it in a test Next.js project with a `vercel.json`
-3. **Port detection** can be tested by checking stdout patterns match `src/port/detector.ts` regex
-4. **No test suite**: Manual testing required with real Next.js project
+2. **Test install command**: Run `npx tsx src/cli/index.ts install` in a test Next.js project
+3. **Test run command**: Run `npx tsx src/cli/index.ts run` in a test Next.js project with a `vercel.json`
+4. **Port detection** can be tested by checking stdout patterns match `src/port/detector.ts` regex
+5. **No test suite**: Manual testing required with real Next.js project
 
 ## Configuration Files
 

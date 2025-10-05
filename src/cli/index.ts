@@ -3,11 +3,33 @@ import { config } from 'dotenv';
 import { parseVercelConfig } from '../config/parser.js';
 import { detectPort, getPortFromEnv } from '../port/detector.js';
 import { CronScheduler, setupShutdownHandlers } from '../scheduler/index.js';
+import { installCommand } from './install.js';
 
 /**
- * Main CLI entry point that wraps next dev
+ * Show help message
  */
-export async function runCli(): Promise<void> {
+function showHelp(): void {
+  console.log(`
+vercel-local-cron - Run Vercel cron jobs locally during Next.js development
+
+Usage:
+  vercel-local-cron <command>
+
+Commands:
+  install     Install and configure vercel-local-cron in your project
+  run         Run the cron scheduler with Next.js dev server
+  help        Show this help message
+
+Examples:
+  npx vercel-local-cron install
+  vercel-local-cron run
+`);
+}
+
+/**
+ * Run the dev server with cron scheduling
+ */
+export async function runDev(): Promise<void> {
   console.log('🚀 Starting Vercel Local Cron...\n');
 
   try {
@@ -95,6 +117,33 @@ export async function runCli(): Promise<void> {
   } catch (error) {
     console.error('❌ Error:', error instanceof Error ? error.message : error);
     process.exit(1);
+  }
+}
+
+/**
+ * Main CLI entry point - routes commands
+ */
+export async function runCli(): Promise<void> {
+  const command = process.argv[2];
+
+  switch (command) {
+    case 'install':
+      await installCommand();
+      break;
+    case 'run':
+      await runDev();
+      break;
+    case 'help':
+    case '--help':
+    case '-h':
+      showHelp();
+      break;
+    default:
+      if (command) {
+        console.error(`❌ Unknown command: ${command}\n`);
+      }
+      showHelp();
+      process.exit(command ? 1 : 0);
   }
 }
 

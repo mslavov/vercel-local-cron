@@ -25,7 +25,21 @@ pnpm add -D vercel-local-cron
 
 ## Quick Start
 
-### 1. Define Cron Jobs in `vercel.json`
+### 1. Install in Your Project
+
+Run the install command to automatically configure your project:
+
+```bash
+npx vercel-local-cron install
+```
+
+This will:
+- Install `vercel-local-cron` as a dev dependency
+- Update your `package.json` dev script to use `vercel-local-cron run`
+
+### 2. Define Cron Jobs in `vercel.json`
+
+Create a `vercel.json` file in your project root:
 
 ```json
 {
@@ -43,28 +57,16 @@ pnpm add -D vercel-local-cron
 }
 ```
 
-### 2. Add `CRON_SECRET` to `.env.local`
+### 3. Add `CRON_SECRET` to `.env.local`
 
 ```bash
 CRON_SECRET=your-secret-token-here
 ```
 
-### 3. Run the CLI
-
-Replace `next dev` with `vercel-local-cron`:
+### 4. Start Development
 
 ```bash
-npx vercel-local-cron
-```
-
-Or add it to your `package.json`:
-
-```json
-{
-  "scripts": {
-    "dev": "vercel-local-cron"
-  }
-}
+npm run dev
 ```
 
 That's it! Your cron jobs will now execute on schedule during development.
@@ -120,21 +122,55 @@ The library looks for environment files in this order:
 - `0 */2 * * *` - Every 2 hours
 - `0 9 * * 1` - Every Monday at 9 AM
 
+## CLI Commands
+
+### `install`
+
+Automatically install and configure vercel-local-cron in your project:
+
+```bash
+npx vercel-local-cron install
+```
+
+This command:
+- Detects your package manager (npm, yarn, pnpm, or bun)
+- Installs vercel-local-cron as a dev dependency
+- Updates your `package.json` dev script to `vercel-local-cron run`
+
+### `run`
+
+Run the cron scheduler with Next.js dev server:
+
+```bash
+vercel-local-cron run
+```
+
+This is what gets executed when you run `npm run dev` after installation.
+
+### `help`
+
+Show help message with available commands:
+
+```bash
+vercel-local-cron help
+```
+
 ## API Usage
 
 You can also use the library programmatically:
 
 ```typescript
-import { CronScheduler, parseVercelConfig, loadEnvironment } from 'vercel-local-cron';
+import { CronScheduler, parseVercelConfig, runDev, installCommand } from 'vercel-local-cron';
 
-// Load configuration
+// Run the dev server programmatically
+await runDev();
+
+// Or use individual components
 const vercelConfig = await parseVercelConfig();
-const envConfig = loadEnvironment();
 
-// Create scheduler
 const scheduler = new CronScheduler({
   port: 3000,
-  cronSecret: envConfig.cronSecret,
+  cronSecret: process.env.CRON_SECRET,
   jobs: vercelConfig.crons || [],
 });
 

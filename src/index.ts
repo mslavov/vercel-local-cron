@@ -6,7 +6,8 @@ export { parseVercelConfig } from './config/parser.js';
 export { CronScheduler, setupShutdownHandlers } from './scheduler/index.js';
 export { executeRequest } from './http/executor.js';
 export { detectPort, getPortFromEnv } from './port/detector.js';
-export { runCli } from './cli/index.js';
+export { runCli, runDev } from './cli/index.js';
+export { installCommand } from './cli/install.js';
 
 export type {
   CronJob,

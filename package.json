@@ -1,6 +1,6 @@
 {
   "name": "vercel-local-cron",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Run Vercel cron jobs locally during Next.js development",
   "type": "module",
   "main": "./dist/index.js",
@@ -31,7 +31,15 @@
     "local",
     "scheduler"
   ],
-  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mslavov/vercel-local-cron.git"
+  },
+  "homepage": "https://github.com/mslavov/vercel-local-cron#readme",
+  "bugs": {
+    "url": "https://github.com/mslavov/vercel-local-cron/issues"
+  },
+  "author": "Milko Slavov",
   "license": "MIT",
   "dependencies": {
     "croner": "^9.0.0",

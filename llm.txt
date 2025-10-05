@@ -3,7 +3,7 @@
 ## Project Overview
 
 **Name:** vercel-local-cron
-**Version:** 0.0.1
+**Version:** 0.1.0
 **License:** MIT
 **Description:** A lightweight TypeScript library that automatically executes Vercel cron jobs on your local machine during Next.js development. Eliminates the need to deploy to preview environments just to test cron jobs.
 
@@ -51,7 +51,8 @@ vercel-local-cron/
 ├── src/
 │   ├── index.ts              # Main exports (public API)
 │   ├── cli/
-│   │   └── index.ts          # CLI entry point, spawns next dev, coordinates everything
+│   │   ├── index.ts          # CLI command router, dev server orchestration
+│   │   └── install.ts        # Install command handler
 │   ├── config/
 │   │   └── parser.ts         # Parses and validates vercel.json
 │   ├── http/
@@ -75,25 +76,44 @@ vercel-local-cron/
 ### src/index.ts
 **Purpose:** Public API exports
 **Exports:**
-- Functions: `parseVercelConfig`, `CronScheduler`, `setupShutdownHandlers`, `executeRequest`, `detectPort`, `getPortFromEnv`, `runCli`
+- Functions: `parseVercelConfig`, `CronScheduler`, `setupShutdownHandlers`, `executeRequest`, `detectPort`, `getPortFromEnv`, `runCli`, `runDev`, `installCommand`
 - Types: `CronJob`, `VercelConfig`, `EnvConfig`, `LocalCronConfig`
 
 ### src/cli/index.ts
-**Purpose:** Main CLI orchestration
+**Purpose:** CLI command routing and dev server orchestration
 **Key Functions:**
-- `runCli()`: Entry point that:
+- `runCli()`: Command router that parses `process.argv[2]` and dispatches to:
+  - `install` → `installCommand()`
+  - `run` → `runDev()`
+  - `help` / `--help` / `-h` → `showHelp()`
+  - unknown/no command → show help and exit
+- `runDev()`: Dev server orchestration:
   1. Loads environment variables from `.env.local`
   2. Parses `vercel.json`
   3. Spawns `npx next dev` as child process
   4. Monitors stdout for port detection
   5. Initializes CronScheduler once port is detected
   6. Sets up shutdown handlers for SIGINT/SIGTERM
+- `showHelp()`: Displays usage information
 
 **Important Patterns:**
 - Uses child_process.spawn with piped stdio
 - Forwards stdout/stderr to parent process
 - Detects port from Next.js output patterns
 - Graceful shutdown with 1s timeout
+
+### src/cli/install.ts
+**Purpose:** Install command handler
+**Key Functions:**
+- `installCommand()`: Main install flow
+- `detectPackageManager()`: Detects npm/yarn/pnpm/bun from lock files
+- `installPackage()`: Spawns package manager to install as dev dependency
+- `updatePackageJson()`: Reads, modifies, and writes package.json dev script
+
+**Important Details:**
+- Checks for existing configuration to avoid duplicate setup
+- Updates dev script to `vercel-local-cron run`
+- Provides next steps after successful installation
 
 ### src/config/parser.ts
 **Purpose:** Configuration parsing and validation
@@ -249,14 +269,38 @@ interface LocalCronConfig {
 ## Usage Patterns
 
 ### CLI Usage
+
+**Install Command:**
 ```bash
-npx vercel-local-cron
+npx vercel-local-cron install
 ```
+Automatically installs and configures the package in your project.
+
+**Run Command:**
+```bash
+vercel-local-cron run
+# or after install
+npm run dev
+```
+Runs the dev server with cron scheduling.
+
+**Help Command:**
+```bash
+vercel-local-cron help
+```
+Shows usage information.
 
 ### Programmatic Usage
 ```typescript
-import { CronScheduler, parseVercelConfig, loadEnvironment } from 'vercel-local-cron';
+import { CronScheduler, parseVercelConfig, runDev, installCommand } from 'vercel-local-cron';
 
+// Run dev server programmatically
+await runDev();
+
+// Run install command programmatically
+await installCommand();
+
+// Or use individual components
 const vercelConfig = await parseVercelConfig();
 const scheduler = new CronScheduler({
   port: 3000,
